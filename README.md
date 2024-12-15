@@ -1,6 +1,6 @@
 # AOAIchat
 AOAI chat
-Open source chat app using Azure OpenAI, fastapi, CosmosDB.
+Open source chat app using Azure OpenAI, Fastapi, CosmosDB.
 
 ## Features
 - Private GPT (powered by AOAI / GitHub models / Ollama / LM studio)
@@ -84,9 +84,6 @@ Open source chat app using Azure OpenAI, fastapi, CosmosDB.
   - Yes
  
 
-# FastAPI Chatbot Application
-
-This repository contains a FastAPI chatbot application leveraging Azure OpenAI and MongoDB. The application is pre-built and packaged in a Docker image for easy deployment.
 
 ## Getting Started
 
