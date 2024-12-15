@@ -10,6 +10,8 @@ Open source chat app using Azure OpenAI, Fastapi, CosmosDB.
 - Playground env in chat
 - Supports RAG on Azure blob storage, Azure SQL, Onelake.
 
+![image](https://github.com/user-attachments/assets/98d9175b-54be-48a2-a8ff-66a296897bfb)
+
 
 ## Screenshots
 ![Screenshot 2024-12-15 160409](https://github.com/user-attachments/assets/3b54740a-aadd-4199-bf0b-019288bc11fb)
@@ -18,9 +20,6 @@ Open source chat app using Azure OpenAI, Fastapi, CosmosDB.
 ![Screenshot 2024-12-15 160531](https://github.com/user-attachments/assets/bb3be3db-231b-4c1e-bc2f-543d5724ed0d)
 
 
-
-
-![image](https://github.com/user-attachments/assets/98d9175b-54be-48a2-a8ff-66a296897bfb)
 
 ## FAQ
 - Can I use Llama / Mistral /Phi models?
