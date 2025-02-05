@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AOAI chat</title>
+    <title>Cloud.AI chat</title>
     <link rel="icon" type="image/x-icon" href="/static/images/aoai_icon.ico">
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Cascadia+Mono:wght@400&display=swap" rel="stylesheet">
@@ -359,7 +359,7 @@ textarea#prompt {
     <header>
         <button id="sidebar-toggle" class="btn btn-dark">☰</button>
         <h1 class="header-title">
-            <a href="/">AOAI | Enterprise Chat</a>
+            <a href="/">Cloud.AI | Enterprise Chat</a>
         </h1>
     </header>
 
@@ -393,6 +393,10 @@ textarea#prompt {
                     <option value="gpt-4o">gpt-4o</option>
                     <option value="gpt-4o-mini">gpt-4o-mini</option>
                 </select>
+            </div>
+            <div class="form-group">
+                <input type="checkbox" id="rag-mode" class="form-check-input">
+                <label for="rag-mode" class="form-check-label">RAG Mode</label>
             </div>
             <button type="button" class="btn btn-primary" onclick="applySettings()">Apply</button>
         </form>
@@ -469,13 +473,15 @@ function applySettings() {
     const temperature = document.getElementById('temperature').value;  
     const maxTokens = document.getElementById('max-tokens').value;  
     const modelSelection = document.getElementById('model-selection').value;  
+    const ragMode = document.getElementById('rag-mode').checked;  
   
     const settings = {  
         systemPrompt,  
         prevMessageCount,  
         temperature,  
         maxTokens,  
-        modelSelection,   
+        modelSelection,  
+        ragMode  
     };  
   
     // Save settings to localStorage  
@@ -493,7 +499,8 @@ function loadSettings() {
         document.getElementById('prev-message-count').value = settings.prevMessageCount || '';  
         document.getElementById('temperature').value = settings.temperature || '';  
         document.getElementById('max-tokens').value = settings.maxTokens || '';  
-        document.getElementById('model-selection').value = settings.modelSelection || 'gpt-4o-mini';   
+        document.getElementById('model-selection').value = settings.modelSelection || 'gpt-4o';  
+        document.getElementById('rag-mode').checked = settings.ragMode || false;  
     }  
 }  
     
@@ -641,24 +648,17 @@ async function submitPrompt() {
     let sessionId = getSessionIdFromUrl();  
     const prompt = document.getElementById('prompt').value.trim();  
     const imageInput = document.getElementById('image-upload');  
+    const ragMode = document.getElementById('rag-mode').checked; // Get RAG mode state  
   
     if (!prompt && imageInput.files.length === 0) return;  
   
     const formData = new FormData();  
     formData.append('prompt', prompt);  
+    formData.append('ragMode', ragMode); // Append RAG mode state  
   
     // Append images to formData  
     for (const file of imageInput.files) {  
         formData.append('images', file);  
-    }  
-  
-    const settings = JSON.parse(localStorage.getItem('chatSettings'));  
-    if (settings) {  
-        formData.append('prevMessageCount', settings.prevMessageCount);  
-        formData.append('systemPrompt', settings.systemPrompt);  
-        formData.append('temperature', settings.temperature);  
-        formData.append('maxResponseTokens', settings.maxTokens);  
-        formData.append('modelSelection', settings.modelSelection);  
     }  
   
     // Reset image input after handling  
@@ -677,7 +677,7 @@ async function submitPrompt() {
     }  
   
     displayMessage('user', prompt);  
-  
+
     // Reset the textarea height here  
     const promptTextarea = document.getElementById('prompt');  
     promptTextarea.style.height = 'auto';  
@@ -704,17 +704,12 @@ async function submitPrompt() {
                     if (json.content) {  
                         content += json.content;  
                         const htmlContent = marked.parse(content);  
-  
-                        // Incremental rendering  
                         messageElement.innerHTML = htmlContent;  
   
                         // Highlight code blocks  
                         messageElement.querySelectorAll('pre code').forEach((block) => {  
                             hljs.highlightElement(block);  
                         });  
-  
-                        // Scroll to the bottom for new content  
-                        chatContainer.scrollTop = chatContainer.scrollHeight;  
                     }  
                 } catch (e) {  
                     console.error('JSON parse error:', e);  
