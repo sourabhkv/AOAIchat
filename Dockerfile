@@ -1,5 +1,5 @@
 # Use the official Python image from the Docker Hub  
-FROM python:3.11
+FROM python:3.12-slim
   
 # Set the working directory in the container  
 WORKDIR /app  
@@ -12,7 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
   
 # Expose port 8000 to the world outside this container  
 EXPOSE 8000  
-  
+
+RUN pip install crawl4ai && crawl4ai-setup && crawl4ai-doctor
+
 # Run the FastAPI application using uvicorn  
 CMD ["uvicorn", "appmongo:app", "--host", "0.0.0.0", "--port", "8000"]
 
