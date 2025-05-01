@@ -21,6 +21,7 @@ import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import chromadb
 from chromadb.config import Settings
+import httpx
 
 # Initialize Chroma client
 client = chromadb.Client(Settings(anonymized_telemetry=False))
@@ -46,17 +47,19 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", 800))
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT") or 'You are a helpful assistant.'
 
 
-SEARCH_ENDPOINT = os.getenv('SEARCH_ENDPOINT')
+SEARCH_ENDPOINT = os.getenv('SEARCH_ENDPOINT',"https://myaoaisearch.search.windows.net")
 SEARCH_KEY =  os.getenv('SEARCH_KEY')
 SEARCH_INDEX  = os.getenv('SEARCH_INDEX')
 
 token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
 
+CRAWL4AI_ENDPOINT = os.getenv('CRAWL4AI_ENDPOINT',"http://localhost:11235/crawl")
+
 
 client_ai = AsyncAzureOpenAI(
     api_version='2024-05-01-preview',
     azure_endpoint='https://just-testing-12.openai.azure.com',
-    azure_ad_token_provider=token_provider
+    api_key="KEY"
 )
 
 def chunk_text(text):
@@ -82,7 +85,7 @@ def chunk_text(text):
     #print(texts, len(texts))
     return texts
 
-def search(query, max_results=4):
+def search(query, max_results=3):
     """Perform a search using DuckDuckGo Search API."""
     results = DDGS().text(query, max_results=max_results)
     return [result['href'] for result in results]
@@ -96,30 +99,49 @@ async def clean_markdown_links(markdown_text):
     markdown_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', markdown_text)
     return markdown_text
 
-async def crawl(urls):
+async def crawl(urls: List[str]):
     md_list = []
-    browser_config = BrowserConfig(
-        headless=True,  
-        verbose=True
-    )
-    options = {
-        "incognito": True,  # Enable incognito mode
-        "disable_cache": True,  # Disable cache
-    }
-    run_config = CrawlerRunConfig(
-        cache_mode=CacheMode.DISABLED,  # Disable cache
-        markdown_generator=DefaultMarkdownGenerator(
-            content_filter=PruningContentFilter(threshold=.4, threshold_type="fixed", min_word_threshold=0)
-        ),
-    )
-    
-    async with AsyncWebCrawler(config=browser_config, options=options) as crawler:
-        # Specify an incognito-friendly URL or settings if supported elsewhere
-        results = await crawler.arun_many(urls, config=run_config)
-        for result in results:  # Now you can iterate normally
-            if result.success:
-                __temp = await (clean_markdown_links(result.markdown))
-                md_list.append(__temp)
+    async with httpx.AsyncClient() as client:
+        response  = await client.post(
+            CRAWL4AI_ENDPOINT,
+            json={
+                "urls": urls,
+                "format": "json",  # <-- important: returns one JSON object per URL
+                "browser_config": {
+                    "headless": True,
+                    "verbose": True
+                },
+                "options": {
+                    "incognito": True,
+                    "disable_cache": True
+                },
+                "run_config": {
+                    "cache_mode": "disabled",
+                    "markdown_generator": {
+                        "content_filter": {
+                            "type": "pruning",
+                            "threshold": 0.4,
+                            "threshold_type": "dynamic",
+                            "min_word_threshold": 0
+                        },
+                        "exclude_sections": {  # <-- Custom section exclusion
+                            "header": True,
+                            "footer": True,
+                            "sidebar": True,  # Exclude sidebar
+                            "ads": True  # Exclude ads or unnecessary sections if possible
+                        }
+                    }
+                }
+            }
+        )
+        results = response.json() 
+        for i in results['results']:
+            #print(i['url'])
+            #print(len(i['markdown']['raw_markdown']))
+            clena = await clean_markdown_links(i['markdown']['raw_markdown'])
+            #print(len(clena))
+            #print(clena)
+            md_list.append(clena)
     
     return md_list
 
@@ -141,7 +163,7 @@ def extract_text_from_markdown(markdown_content):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index2.html", {"request": request})
 
 @app.post("/create_chat")
 async def create_chat():
@@ -229,20 +251,21 @@ async def chat_view(
             __temp_comtext = all_messages[1:]
         else:
             __temp_comtext = all_messages
-
+        
+        print(time.time())
         #context aware prompting
         __temp_prompt = await client_ai.chat.completions.create(
-                model=model,
+                model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "you are a search assistant/ prompt maker , you will be given a question and context try to make prompt for question\
-                     DO NOT ANSWER THE QUESTION, just make simple short prompt for question and context, make sure not to use long sentences, as searching long sentence will fetch poor results,\
-                     DO not add year or date in prompt unless specified"},
+                    {"role": "system", "content": "Below is a history of conversation so far and a new question is asked by the user that needs to be answered\
+                     by searhching in a web or by using the context provided. Generate a search query based on the conversation and new question, DO NOT ANSWER THE USER QUESTION\
+                     make the search query simple and short DO NOT KEEP long search query as it reduces accuracy, keep in 7 words or less. DO NOT INCLUDE ANY DATE or YEAR IN SEARCH QUERY UNLESS MENTIONED IN USER QUESTION."},
                 ] + __temp_comtext,
                 max_tokens=30,
                 temperature=0.0,
                 top_p=0.0
         )       
-        
+        print(time.time(), "context call over")
         context_aware_prompt = __temp_prompt.choices[0].message.content
         print("context aware prompt", context_aware_prompt)
 
@@ -251,13 +274,13 @@ async def chat_view(
         functions = [
             {
                 "name": "summarise_website",
-                "description": "summarise, extract text, describe from a URL and will provide the URL. DO not modify prompt or URL",
+                "description": "summarise, extract text, describe from a URL and will provide the URL. Keep the prompt, URL as it it DO NOT MODIFY.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "prompt": {
                             "type": "string",
-                            "description": "summarise https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/function-calling"
+                            "description": "summarise"
                         },
                         "URL": {
                             "type": "string",
@@ -269,7 +292,7 @@ async def chat_view(
             },
             {
                 "name": "web_search",
-                "description": "Perform a web search for a query if specific knowledge is not available in training data and query requires real-time data. DO not modify prompt",
+                "description": "Perform a web search for a query if specific knowledge is not available, or if the user asks for something that requires a web search. Keep the prompt as it is DO NOT MODIFY.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -294,6 +317,7 @@ async def chat_view(
 
         # Handle the function call
         message = response.choices[0].message  # No need to await here anymore
+        print(time.time(), "func call over")
 
 
     async def summarise_website(prompt, URL):
@@ -428,7 +452,7 @@ async def chat_view(
             website_texts = [str(chunk.page_content) for chunk in __temp_chunk]
             all_texts.extend(website_texts)  # Collect all texts for embedding
         
-
+        print(time.time(),"chunking", len(all_chunks), len(all_texts))
         embeddings = await get_embeddings(all_texts)
         collection.add(
             documents=all_texts,
@@ -436,23 +460,30 @@ async def chat_view(
             ids=[f"doc{i}" for i in range(len(all_texts))]
         )
 
+        print(time.time(),"embedding1")
         query_embedding = await get_embeddings([query])
         results = collection.query(
             query_embeddings=query_embedding,
-            n_results=4,
+            n_results=3,
             include=["documents", "distances"]
         )
 
         similar_context = ""
         for doc in (results['documents'][0]):
             similar_context += f"Document: {doc}\n\n"
+        
+        __temp_urls = ""
+        for i in urls:
+            __temp_urls += f"\n{i}"
+        
+        print(time.time(),"embedding2")
 
         completion = await client_ai.chat.completions.create(
             model='gpt-4o-mini',
             messages=[
                 {
                     "role": "system", 
-                    "content": 'You are a helpful assistant. You will be given a question and a context try to answer question.\n---------context-------\n.'+"\n\n" + similar_context+"\n\n" + "------------------\n\n" + "Along with the answer put these links as citations in response \n"+ str(urls)
+                    "content": 'You are a helpful assistant. You will be given a question and a context try to answer question.\n---------context-------\n.'+"\n\n" + similar_context+"\n\n" + "------------------\n\n" + "Along with the answer put these links as citations in response \n"+ __temp_urls
                 },
                 {
                     "role": "user",
